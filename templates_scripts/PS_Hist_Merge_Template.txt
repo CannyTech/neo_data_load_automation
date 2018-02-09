@@ -1,0 +1,389 @@
+#!/usr/bin/env python
+
+import snowflake.connector
+import sys
+
+crdfile = 'D:\Data\InformaticaCloud\Python\Creds.txt'
+
+import base64
+
+with open(crdfile) as f:
+  credentials = [x.strip().split(':') for x in f.readlines()]
+
+for acct,username,password in credentials:
+    
+    USER = username
+    ACCOUNT = acct
+    PASSWORD = base64.b64decode(password)
+
+
+# Connecting to Snowflake
+ctx = snowflake.connector.connect(
+  user=USER,
+  password=PASSWORD.decode(encoding="utf-8"),
+  account=ACCOUNT,
+)
+
+# Gets the version
+
+# ODS Hist logic to populate HISTORY_SNOWFLAKE_TABLE from STAGE_SNOWFLAKE_TABLE
+
+#-------------------------------------------------------------------------------
+# Step-1 - Get the Process Batch ID
+#-------------------------------------------------------------------------------
+
+PROCESS_BATCH_ID="""
+SELECT 
+	MAX(PROCESS_BATCH_ID) PROCESS_BATCH_ID FROM PLD_ETL_PROCESS_STATUS
+WHERE PROCESS_ID
+IN
+(
+SELECT PROCESS_ID FROM
+PLD_ETL_PROCESS_DEFINITION PRCS_DEF
+ WHERE PRCS_DEF.PROCESS_NAME    = 'PROCESS_NAME_REPLACE'
+)
+      """  
+#-------------------------------------------------------------------------------
+# Step-1 - Audit Process: Create new status record
+#-------------------------------------------------------------------------------
+AUDIT_START_SQL="""
+INSERT INTO PLD_ETL_BATCH_JOB_STATUS (PROCESS_BATCH_ID, STARTDTTM,  BATCH_JOB_STATUS, JOB_NAME, SOURCE_TBL_NME, TARGET_TBL_NME, SOURCE_RECORD_CNT)
+SELECT %s
+      ,TO_TIMESTAMP_NTZ(CURRENT_TIMESTAMP)
+      ,'IN PROGRESS'
+      ,'PYTHON_SCRIPT_NAME'
+      ,'STAGE_SNOWFLAKE_TABLE'
+      ,'HISTORY_SNOWFLAKE_TABLE'
+      ,COUNT(*)
+  FROM STAGE_SNOWFLAKE_TABLE
+      """  
+
+
+#-------------------------------------------------------------------------------
+# Step-1A- Audit Process: Get Batch Job ID
+#-------------------------------------------------------------------------------
+BATCH_JOB_SQL="""
+SELECT 
+	MAX(BATCH_JOB_ID) AS  BATCH_JOB_ID
+FROM 
+	PLD_ETL_BATCH_JOB_STATUS
+WHERE JOB_NAME = 'PYTHON_SCRIPT_NAME'
+      """  
+
+#-------------------------------------------------------------------------------
+# Step-2 Audit Process: Validate Count
+#-------------------------------------------------------------------------------
+
+VALIDATE_COUNT_SQL="""
+SELECT 
+	COUNT(*) CNT
+FROM STAGE_SNOWFLAKE_TABLE
+"""
+#-------------------------------------------------------------------------------
+# Step-3 Merge on md5_hash to insert new record
+#-------------------------------------------------------------------------------
+
+INSERT_SQL="""
+        MERGE INTO HISTORY_SNOWFLAKE_TABLE HST USING STAGE_SNOWFLAKE_TABLE STG 
+                ON STG.PKKEYS01        		= HST.PKKEYS01
+               AND STG.PKKEYS02    		= HST.PKKEYS02
+               AND STG.PKKEYS03    		= HST.PKKEYS03
+               AND STG.PKKEYS04    		= HST.PKKEYS04
+               AND STG.PKKEYS05    		= HST.PKKEYS05
+               AND STG.PKKEYS06    		= HST.PKKEYS06
+               AND STG.PKKEYS07    		= HST.PKKEYS07
+               AND STG.PKKEYS08    		= HST.PKKEYS08
+               AND STG.PKKEYS09    		= HST.PKKEYS09
+               AND STG.PKKEYS10    		= HST.PKKEYS10
+               AND STG.PKKEYS11    		= HST.PKKEYS11
+               AND STG.PKKEYS12    		= HST.PKKEYS12
+               AND STG.PKKEYS13    		= HST.PKKEYS13
+               AND STG.PKKEYS14    		= HST.PKKEYS14
+               AND STG.PKKEYS15    		= HST.PKKEYS15
+               AND STG.PKKEYS16    		= HST.PKKEYS16
+               AND STG.PKKEYS17    		= HST.PKKEYS17
+               AND STG.PKKEYS18    		= HST.PKKEYS18
+               AND STG.PKKEYS19    		= HST.PKKEYS19
+               AND STG.PKKEYS20    		= HST.PKKEYS20
+               AND STG.PKKEYS21    		= HST.PKKEYS21
+               AND STG.PKKEYS22    		= HST.PKKEYS22
+               AND STG.PKKEYS23    		= HST.PKKEYS23
+               AND STG.PKKEYS24    		= HST.PKKEYS24
+               AND STG.MD5_HASH     		= HST.MD5_HASH
+               AND HST.CURRENT_IND  		= 1
+               AND HST.CDC_ACTION  <> 'D'
+              WHEN NOT MATCHED THEN  
+                   INSERT (HIST_COL_NAME, LATEST_PER_DAY_IND, CURRENT_IND, CDC_ACTION, CDC_DATE,INS_BATCH_JOB_ID)
+                   VALUES (STG_COL_NAME, 1, 1, 'HIST', TO_TIMESTAMP_NTZ(CURRENT_TIMESTAMP),%s);
+        """
+
+#-------------------------------------------------------------------------------
+# Step-4 Merge on PK to expire records in History
+#-------------------------------------------------------------------------------
+
+MERGE_PK_SQL="""
+	MERGE INTO HISTORY_SNOWFLAKE_TABLE HST USING STAGE_SNOWFLAKE_TABLE STG
+                ON STG.PKKEYS01        		= HST.PKKEYS01
+               AND STG.PKKEYS02    		= HST.PKKEYS02
+               AND STG.PKKEYS03    		= HST.PKKEYS03
+               AND STG.PKKEYS04    		= HST.PKKEYS04
+               AND STG.PKKEYS05    		= HST.PKKEYS05
+               AND STG.PKKEYS06    		= HST.PKKEYS06
+               AND STG.PKKEYS07    		= HST.PKKEYS07
+               AND STG.PKKEYS08    		= HST.PKKEYS08
+               AND STG.PKKEYS09    		= HST.PKKEYS09
+               AND STG.PKKEYS10    		= HST.PKKEYS10
+               AND STG.PKKEYS11    		= HST.PKKEYS11
+               AND STG.PKKEYS12    		= HST.PKKEYS12
+               AND STG.PKKEYS13    		= HST.PKKEYS13
+               AND STG.PKKEYS14    		= HST.PKKEYS14
+               AND STG.PKKEYS15    		= HST.PKKEYS15
+               AND STG.PKKEYS16    		= HST.PKKEYS16
+               AND STG.PKKEYS17    		= HST.PKKEYS17
+               AND STG.PKKEYS18    		= HST.PKKEYS18
+               AND STG.PKKEYS19    		= HST.PKKEYS19
+               AND STG.PKKEYS20    		= HST.PKKEYS20
+               AND STG.PKKEYS21    		= HST.PKKEYS21
+               AND STG.PKKEYS22    		= HST.PKKEYS22
+               AND STG.PKKEYS23    		= HST.PKKEYS23
+               AND STG.PKKEYS24    		= HST.PKKEYS24
+               AND (STG.MD5_HASH   		<> HST.MD5_HASH
+                OR  HST.CDC_ACTION  		= 'D')
+               AND HST.CURRENT_IND  		= 1                                   
+              WHEN MATCHED AND HST.LATEST_PER_DAY_IND = 1 AND DATE_TRUNC("DAY", STG.ETL_INSERT_DATE) = DATE_TRUNC("DAY", HST.INSERT_DATE) THEN UPDATE SET
+                   CURRENT_IND        = 0,
+                   LATEST_PER_DAY_IND = 0,
+                   CDC_DATE           = TO_TIMESTAMP_NTZ(CURRENT_TIMESTAMP),
+                   UPD_BATCH_JOB_ID   = %s
+              WHEN MATCHED THEN UPDATE SET               
+                   CURRENT_IND        = 0,
+                   CDC_DATE           = TO_TIMESTAMP_NTZ(CURRENT_TIMESTAMP),
+                   UPD_BATCH_JOB_ID   = %s;
+
+"""
+
+#-------------------------------------------------------------------------------
+# Step-5 Merge insert the deleted records based on antijoin product
+#-------------------------------------------------------------------------------
+MERGE_INS_SQL="""
+        MERGE INTO HISTORY_SNOWFLAKE_TABLE HST1 USING 
+                  (SELECT HST.* FROM HISTORY_SNOWFLAKE_TABLE HST
+                     LEFT JOIN STAGE_SNOWFLAKE_TABLE STG
+	                ON STG.PKKEYS01        		= HST.PKKEYS01
+	               AND STG.PKKEYS02    		= HST.PKKEYS02
+	               AND STG.PKKEYS03    		= HST.PKKEYS03
+	               AND STG.PKKEYS04    		= HST.PKKEYS04
+	               AND STG.PKKEYS05    		= HST.PKKEYS05
+	               AND STG.PKKEYS06    		= HST.PKKEYS06
+	               AND STG.PKKEYS07    		= HST.PKKEYS07
+	               AND STG.PKKEYS08    		= HST.PKKEYS08
+	               AND STG.PKKEYS09    		= HST.PKKEYS09
+	               AND STG.PKKEYS10    		= HST.PKKEYS10
+	               AND STG.PKKEYS11    		= HST.PKKEYS11
+	               AND STG.PKKEYS12    		= HST.PKKEYS12
+	               AND STG.PKKEYS13    		= HST.PKKEYS13
+	               AND STG.PKKEYS14    		= HST.PKKEYS14
+	               AND STG.PKKEYS15    		= HST.PKKEYS15
+	               AND STG.PKKEYS16    		= HST.PKKEYS16
+	               AND STG.PKKEYS17    		= HST.PKKEYS17
+	               AND STG.PKKEYS18    		= HST.PKKEYS18
+	               AND STG.PKKEYS19    		= HST.PKKEYS19
+	               AND STG.PKKEYS20    		= HST.PKKEYS20
+	               AND STG.PKKEYS21    		= HST.PKKEYS21
+	               AND STG.PKKEYS22    		= HST.PKKEYS22
+	               AND STG.PKKEYS23    		= HST.PKKEYS23
+	               AND STG.PKKEYS24    		= HST.PKKEYS24
+                    WHERE HST.CURRENT_IND = 1
+                      AND HST.CDC_ACTION  <> 'D'  
+                      AND STG.MD5_HASH_PK  IS NULL
+                  ) AS DELETED --SELECT COUNT IS USED TO MAKE SURE THAT THE STAGE TABLE IS NOT EMPTY WHEN PROCESSING DELETES
+                ON DELETED.MD5_HASH_PK = HST1.MD5_HASH_PK
+               AND HST1.CDC_ACTION = 'D'    
+              WHEN NOT MATCHED THEN  
+                   INSERT (HIST_COL_NAME, LATEST_PER_DAY_IND, CURRENT_IND, CDC_ACTION, CDC_DATE,INS_BATCH_JOB_ID)
+                   VALUES (DELETED_COL_NAME, 1, 1, 'D', TO_TIMESTAMP_NTZ(CURRENT_TIMESTAMP),%s);
+
+
+"""
+
+
+#-------------------------------------------------------------------------------
+# Step-6: Merge deletes to expire deleted record
+#-------------------------------------------------------------------------------
+MERGE_DEL_SQL="""
+                MERGE INTO HISTORY_SNOWFLAKE_TABLE HST1 USING 
+                  (SELECT HST.MD5_HASH_PK FROM HISTORY_SNOWFLAKE_TABLE HST
+                     LEFT JOIN STAGE_SNOWFLAKE_TABLE STG
+	                ON STG.PKKEYS01        		= HST.PKKEYS01
+	               AND STG.PKKEYS02    		= HST.PKKEYS02
+	               AND STG.PKKEYS03    		= HST.PKKEYS03
+	               AND STG.PKKEYS04    		= HST.PKKEYS04
+	               AND STG.PKKEYS05    		= HST.PKKEYS05
+	               AND STG.PKKEYS06    		= HST.PKKEYS06
+	               AND STG.PKKEYS07    		= HST.PKKEYS07
+	               AND STG.PKKEYS08    		= HST.PKKEYS08
+	               AND STG.PKKEYS09    		= HST.PKKEYS09
+	               AND STG.PKKEYS10    		= HST.PKKEYS10
+	               AND STG.PKKEYS11    		= HST.PKKEYS11
+	               AND STG.PKKEYS12    		= HST.PKKEYS12
+	               AND STG.PKKEYS13    		= HST.PKKEYS13
+	               AND STG.PKKEYS14    		= HST.PKKEYS14
+	               AND STG.PKKEYS15    		= HST.PKKEYS15
+	               AND STG.PKKEYS16    		= HST.PKKEYS16
+	               AND STG.PKKEYS17    		= HST.PKKEYS17
+	               AND STG.PKKEYS18    		= HST.PKKEYS18
+	               AND STG.PKKEYS19    		= HST.PKKEYS19
+	               AND STG.PKKEYS20    		= HST.PKKEYS20
+	               AND STG.PKKEYS21    		= HST.PKKEYS21
+	               AND STG.PKKEYS22    		= HST.PKKEYS22
+	               AND STG.PKKEYS23    		= HST.PKKEYS23
+	               AND STG.PKKEYS24    		= HST.PKKEYS24
+                    WHERE HST.CURRENT_IND = 1
+                      AND HST.CDC_ACTION  <> 'D'
+                      AND STG.MD5_HASH_PK  IS NULL
+                  ) AS DELETED --SELECT COUNT IS USED TO MAKE SURE THAT THE STAGE TABLE IS NOT EMPTY WHEN PROCESSING DELETES
+                ON DELETED.MD5_HASH_PK = HST1.MD5_HASH_PK
+               AND HST1.CDC_ACTION <> 'D'
+               AND HST1.CURRENT_IND                      = 1            
+              WHEN MATCHED AND HST1.LATEST_PER_DAY_IND = 1 AND DATE_TRUNC("DAY", CURRENT_TIMESTAMP) = DATE_TRUNC("DAY", HST1.INSERT_DATE) THEN UPDATE SET
+                   CURRENT_IND        = 0,
+                   LATEST_PER_DAY_IND = 0,
+                   CDC_DATE           = TO_TIMESTAMP_NTZ(CURRENT_TIMESTAMP),
+                   UPD_BATCH_JOB_ID   = %s
+              WHEN MATCHED THEN UPDATE SET               
+                   CURRENT_IND        = 0,
+                   CDC_DATE           = TO_TIMESTAMP_NTZ(CURRENT_TIMESTAMP),
+                   UPD_BATCH_JOB_ID   = %s;
+"""
+
+#-------------------------------------------------------------------------------
+# Step-7 - Audit Process: Update the Job Status
+#-------------------------------------------------------------------------------
+AUDIT_END_SQL="""
+UPDATE PLD_ETL_BATCH_JOB_STATUS UPD_STAT
+   SET ENDDTTM           = TO_TIMESTAMP_NTZ(CURRENT_TIMESTAMP)
+      ,BATCH_JOB_STATUS  = %s
+      ,TARGET_INSERT_CNT = TGT_INS_CNT
+      ,TARGET_UPDATE_CNT = TGT_UPD_CNT
+      ,TARGET_DELETE_CNT = TGT_DEL_CNT
+      ,ERROR_CNT         = 0
+  FROM (SELECT JOB_STAT.BATCH_JOB_ID
+              ,SUM(CASE WHEN CDC_ACTION <> 'D' AND CURRENT_IND = 1  THEN 1 ELSE 0 END) INS_CNT
+              ,SUM(CASE WHEN CDC_ACTION <> 'D' AND CURRENT_IND <> 1 THEN 1 ELSE 0 END) UPD_CNT
+              ,SUM(CASE WHEN CDC_ACTION =  'D' AND CURRENT_IND = 1  THEN 1 ELSE 0 END) TGT_DEL_CNT
+              ,UPD_CNT - TGT_DEL_CNT   TGT_UPD_CNT
+              ,INS_CNT - TGT_UPD_CNT   TGT_INS_CNT         
+          FROM PLD_ETL_BATCH_JOB_STATUS JOB_STAT
+          LEFT JOIN
+               HISTORY_SNOWFLAKE_TABLE HST
+            ON HST.INS_BATCH_JOB_ID = JOB_STAT.BATCH_JOB_ID
+            OR HST.UPD_BATCH_JOB_ID = JOB_STAT.BATCH_JOB_ID
+         WHERE JOB_STAT.BATCH_JOB_ID = %s
+         GROUP BY BATCH_JOB_ID
+        ) A
+  WHERE UPD_STAT.BATCH_JOB_ID = A.BATCH_JOB_ID
+"""
+
+
+#-------------------------------------------------------------------------------
+# Validate the Row count IF TABLE IS EMPTY, EXIT "EMPTY TABLE" MESSAGE
+#
+#--------------------------------------------------------------------------------
+
+cs = ctx.cursor()
+try:
+    process_id_sql = cs.execute(PROCESS_BATCH_ID)
+
+    #-------------------------------------------------------------------------------
+    # Capture Process Id
+    #--------------------------------------------------------------------------------
+    one=process_id_sql.fetchone()
+    batch_id_var =one[0]
+    args_audit=batch_id_var
+    args_audit_upd = batch_id_var,batch_id_var
+    audit_start_sql = cs.execute(AUDIT_START_SQL,args_audit)
+    #-------------------------------------------------------------------------------
+    # Capture Batch Id
+    #--------------------------------------------------------------------------------
+    batch_job_sql = cs.execute(BATCH_JOB_SQL)
+    one=batch_job_sql.fetchone()
+    batch_id_var1 =one[0]
+    print(batch_id_var1)
+
+
+    BATCH_JOB_STATUS = "SUCCESS"
+    validate_count_sql = cs.execute(VALIDATE_COUNT_SQL)
+    one=validate_count_sql.fetchone()
+    validate_count_sql_count =one[0]
+    if (validate_count_sql_count <= 0):
+    	BATCH_JOB_STATUS = "FAILURE - EMPTY TABLE"
+    	args_audit_end = BATCH_JOB_STATUS,batch_id_var1
+    	audit_end_sql = cs.execute(AUDIT_END_SQL,args_audit_end)
+    	print(BATCH_JOB_STATUS)
+    	sys.exit(0)
+finally:
+    cs.close()
+
+#-------------------------------------------------------------------------------
+# MERGE STATEMENT
+#--------------------------------------------------------------------------------
+cs = ctx.cursor()
+try:    
+    insert_sql = cs.execute(INSERT_SQL,args_audit)
+    insert_sql_count =insert_sql.rowcount
+    print(insert_sql_count)
+except:    
+    BATCH_JOB_STATUS = "FAILURE - 1ST MERGE STATEMENTS"
+    args_audit_end = BATCH_JOB_STATUS,batch_id_var1
+    audit_end_sql = cs.execute(AUDIT_END_SQL,args_audit_end)
+    print(BATCH_JOB_STATUS)
+    sys.exit(0)
+    
+#-------------------------------------------------------------------------------
+# MERGE STATEMENT
+#--------------------------------------------------------------------------------
+cs = ctx.cursor()
+try:    
+    merge_pk_sql = cs.execute(MERGE_PK_SQL,args_audit_upd)
+    merge_pk_sql_count =merge_pk_sql.rowcount    
+    print(merge_pk_sql_count)
+except:    
+    BATCH_JOB_STATUS = "FAILURE - 2ND MERGE STATEMENTS"
+    args_audit_end = BATCH_JOB_STATUS,batch_id_var1
+    audit_end_sql = cs.execute(AUDIT_END_SQL,args_audit_end)
+    print(BATCH_JOB_STATUS)
+    sys.exit(0)    
+    
+#-------------------------------------------------------------------------------
+# MERGE STATEMENT
+#--------------------------------------------------------------------------------
+cs = ctx.cursor()
+try:    
+    merge_ins_sql = cs.execute(MERGE_INS_SQL,args_audit)
+    merge_ins_sql_count =merge_ins_sql.rowcount    
+    print(merge_ins_sql_count)
+except:    
+    BATCH_JOB_STATUS = "FAILURE - 3RD MERGE STATEMENTS"
+    args_audit_end = BATCH_JOB_STATUS,batch_id_var1
+    audit_end_sql = cs.execute(AUDIT_END_SQL,args_audit_end)
+    print(BATCH_JOB_STATUS)
+    sys.exit(0)    
+    
+#-------------------------------------------------------------------------------
+# MERGE STATEMENT
+#--------------------------------------------------------------------------------
+cs = ctx.cursor()
+try:    
+    merge_del_sql = cs.execute(MERGE_DEL_SQL,args_audit_upd)
+    merge_del_sql_count =merge_del_sql.rowcount
+    args_audit_end = BATCH_JOB_STATUS,batch_id_var1
+    audit_end_sql = cs.execute(AUDIT_END_SQL,args_audit_end)
+    print(merge_del_sql_count)
+except:    
+    BATCH_JOB_STATUS = "FAILURE - 4TH MERGE STATEMENTS"
+    args_audit_end = BATCH_JOB_STATUS,batch_id_var1
+    audit_end_sql = cs.execute(AUDIT_END_SQL,args_audit_end)
+    print(BATCH_JOB_STATUS)
+    sys.exit(0)
+finally:
+    cs.close()    
